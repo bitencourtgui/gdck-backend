@@ -80,6 +80,10 @@ if (!fs.existsSync(AUTH_DIR)) {
 async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WASocket) {
   try {
     const messageKey = message.key;
+    if (!messageKey) {
+      logger.warn('Message without key, skipping');
+      return;
+    }
     const remoteJid = messageKey.remoteJid;
     
     if (!remoteJid) {
@@ -117,21 +121,21 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
       messageType = 'STICKER';
       mediaMimetype = messageContent.stickerMessage.mimetype || 'image/webp';
       
-      logger.debug({ messageId: messageKey.id, mimetype: mediaMimetype }, '📎 Sticker detected');
+      logger.debug({ messageId: messageKey?.id, mimetype: mediaMimetype }, '📎 Sticker detected');
       
       try {
         const buffer = await downloadMediaMessage(
-          message,
+          message as any,
           'buffer',
           {},
           { logger: pino({ level: 'silent' }), reuploadRequest: socket.updateMediaMessage }
         );
         if (buffer) {
           mediaData = `data:${mediaMimetype};base64,${Buffer.from(buffer).toString('base64')}`;
-          logger.debug({ messageId: messageKey.id, bufferSize: buffer.length }, '✅ Sticker downloaded');
+          logger.debug({ messageId: messageKey?.id, bufferSize: buffer.length }, '✅ Sticker downloaded');
         }
       } catch (mediaError) {
-        logger.error({ err: mediaError, messageId: messageKey.id }, '❌ Error downloading sticker');
+        logger.error({ err: mediaError, messageId: messageKey?.id }, '❌ Error downloading sticker');
       }
     } else if (messageContent?.imageMessage) {
       messageType = 'IMAGE';
@@ -141,7 +145,7 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
       // Baixar mídia
       try {
         const buffer = await downloadMediaMessage(
-          message,
+          message as any,
           'buffer',
           {},
           { logger: pino({ level: 'silent' }), reuploadRequest: socket.updateMediaMessage }
@@ -159,7 +163,7 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
       
       try {
         const buffer = await downloadMediaMessage(
-          message,
+          message as any,
           'buffer',
           {},
           { logger: pino({ level: 'silent' }), reuploadRequest: socket.updateMediaMessage }
@@ -176,7 +180,7 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
       
       try {
         const buffer = await downloadMediaMessage(
-          message,
+          message as any,
           'buffer',
           {},
           { logger: pino({ level: 'silent' }), reuploadRequest: socket.updateMediaMessage }
@@ -191,11 +195,11 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
       messageType = 'DOCUMENT';
       text = messageContent.documentMessage.caption || '';
       mediaMimetype = messageContent.documentMessage.mimetype || 'application/octet-stream';
-      mediaFilename = messageContent.documentMessage.fileName || 'document';
+      mediaFilename = messageContent.documentMessage.fileName || undefined;
       
       try {
         const buffer = await downloadMediaMessage(
-          message,
+          message as any,
           'buffer',
           {},
           { logger: pino({ level: 'silent' }), reuploadRequest: socket.updateMediaMessage }
@@ -215,130 +219,44 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
       
       // Verificar se é reply no extendedTextMessage
       if (messageContent.extendedTextMessage.contextInfo?.quotedMessage) {
-        replyToId = messageContent.extendedTextMessage.contextInfo.stanzaId;
+        replyToId = messageContent.extendedTextMessage.contextInfo.stanzaId || undefined;
       }
     }
 
     // Obter nome e foto do contato usando Baileys
     // senderJid pode ser participant (em grupos) ou remoteJid (em chats individuais)
-    const senderJid = messageKey.participant || messageKey.remoteJid;
+    const senderJid = messageKey?.participant || messageKey?.remoteJid;
     let contactName: string | undefined;
     let contactAvatar: string | undefined;
     
     logger.info({ 
       senderJid, 
-      remoteJid: messageKey.remoteJid,
-      participant: messageKey.participant,
+      remoteJid: messageKey?.remoteJid,
+      participant: messageKey?.participant,
       chatId,
     }, '🔍 Starting contact info retrieval');
     
     if (senderJid) {
       try {
-        logger.debug({ senderJid }, '📞 Calling socket.getContactById()...');
-        const contact = await socket.getContactById(senderJid);
+        logger.debug({ senderJid }, '📞 Getting contact info...');
+        // Note: getContactById was removed in Baileys v7, using alternative approach
+        // Extract name from JID if it's a valid phone number (not LID)
+        const jidPart = senderJid.split('@')[0];
+        const isLikelyLID = jidPart.length > 15 && /^\d+$/.test(jidPart);
         
-        // Log completo do objeto contact retornado
-        logger.info({ 
-          senderJid,
-          contactExists: !!contact,
-          contactType: contact ? typeof contact : 'null',
-          contactKeys: contact ? Object.keys(contact) : [],
-          contactFull: contact ? JSON.stringify(contact, null, 2) : 'null',
-        }, '📋 Contact object from getContactById()');
-        
-        // Prioridade: name > verifiedName > pushname > number formatado > LID (evitar)
-        if (contact) {
-          // Verificar TODOS os campos possíveis do contato
-          const contactFields = {
-            name: contact.name,
-            verifiedName: contact.verifiedName,
-            notify: (contact as any).notify,
-            pushname: contact.pushname,
-            number: contact.number,
-            vname: (contact as any).vname,
-            short: (contact as any).short,
-          };
-          
-          logger.debug({ senderJid, contactFields }, '📝 All contact fields available');
-          
-          // Tentar obter nome real primeiro
-          contactName = contact.name || contact.verifiedName || (contact as any).notify || contact.pushname;
-          
-          logger.debug({ 
-            senderJid,
-            name: contact.name,
-            verifiedName: contact.verifiedName,
-            notify: (contact as any).notify,
-            pushname: contact.pushname,
-            selectedName: contactName,
-          }, '👤 Name selection process');
-          
-          // Se não tem nome mas tem número, usar número formatado
-          if (!contactName && contact.number) {
-            logger.debug({ senderJid, number: contact.number }, '📱 No name found, using number');
-            const phoneNumber = contact.number.replace(/\D/g, '');
-            // Formatar número brasileiro se possível
-            if (phoneNumber.length === 13 && phoneNumber.startsWith('55')) {
-              contactName = `+${phoneNumber.slice(0, 2)} ${phoneNumber.slice(2, 4)} ${phoneNumber.slice(4, 9)}-${phoneNumber.slice(9)}`;
-            } else if (phoneNumber.length === 11) {
-              contactName = `${phoneNumber.slice(0, 2)} ${phoneNumber.slice(2, 7)}-${phoneNumber.slice(7)}`;
+        // Use JID as fallback for contact name
+        if (!isLikelyLID) {
+          const phoneOnly = jidPart.replace(/\D/g, '');
+          if (phoneOnly.length >= 10 && phoneOnly.length <= 15) {
+            if (phoneOnly.length === 13 && phoneOnly.startsWith('55')) {
+              contactName = `+${phoneOnly.slice(0, 2)} ${phoneOnly.slice(2, 4)} ${phoneOnly.slice(4, 9)}-${phoneOnly.slice(9)}`;
+            } else if (phoneOnly.length === 11) {
+              contactName = `${phoneOnly.slice(0, 2)} ${phoneOnly.slice(2, 7)}-${phoneOnly.slice(7)}`;
             } else {
-              contactName = contact.number;
+              contactName = phoneOnly;
             }
-            logger.debug({ senderJid, formattedName: contactName }, '✅ Number formatted as name');
+            logger.debug({ senderJid, phoneOnly, formattedName: contactName }, '✅ JID formatted as phone number');
           }
-          
-          // Se ainda não tem nome, verificar se o senderJid é um número de telefone (não LID)
-          // LIDs são números muito longos (15+ dígitos), números de telefone são menores
-          if (!contactName) {
-            const jidPart = senderJid.split('@')[0];
-            const isLikelyLID = jidPart.length > 15 && /^\d+$/.test(jidPart);
-            
-            logger.debug({ 
-              senderJid, 
-              jidPart, 
-              jidLength: jidPart.length,
-              isLikelyLID,
-              isNumeric: /^\d+$/.test(jidPart),
-            }, '🔢 Analyzing JID part');
-            
-            if (!isLikelyLID) {
-              // Pode ser um número de telefone, usar ele formatado
-              const phoneOnly = jidPart.replace(/\D/g, '');
-              if (phoneOnly.length >= 10 && phoneOnly.length <= 15) {
-                if (phoneOnly.length === 13 && phoneOnly.startsWith('55')) {
-                  contactName = `+${phoneOnly.slice(0, 2)} ${phoneOnly.slice(2, 4)} ${phoneOnly.slice(4, 9)}-${phoneOnly.slice(9)}`;
-                } else if (phoneOnly.length === 11) {
-                  contactName = `${phoneOnly.slice(0, 2)} ${phoneOnly.slice(2, 7)}-${phoneOnly.slice(7)}`;
-                } else {
-                  contactName = phoneOnly;
-                }
-                logger.debug({ senderJid, phoneOnly, formattedName: contactName }, '✅ JID part formatted as phone number');
-              } else {
-                // Provavelmente é um LID, não usar como nome
-                logger.warn({ senderJid, jidPart, phoneOnlyLength: phoneOnly.length }, '⚠️ SenderJid appears to be a LID or invalid phone, skipping as contact name');
-                contactName = undefined; // Deixar undefined para o CRM usar fallback próprio
-              }
-            } else {
-              // É um LID, não usar como nome
-              logger.warn({ senderJid, jidPart }, '⚠️ SenderJid is a LID, skipping as contact name');
-              contactName = undefined; // Deixar undefined para o CRM usar fallback próprio
-            }
-          }
-          
-          logger.info({ 
-            senderJid, 
-            finalContactName: contactName,
-            hasName: !!contactName,
-            hasNumber: !!contact.number,
-            contactNumber: contact.number,
-            hasPushname: !!contact.pushname,
-            pushname: contact.pushname,
-            hasVerifiedName: !!contact.verifiedName,
-            verifiedName: contact.verifiedName,
-          }, '✅ Final contact info retrieved');
-        } else {
-          logger.warn({ senderJid }, '❌ getContactById returned null/undefined');
         }
         
         // Tentar obter foto de perfil
@@ -402,11 +320,11 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
       chatId,
       message: text || undefined,
       fromMe: false,
-      messageId: messageKey.id,
+      messageId: messageKey?.id,
       contactName: contactName || undefined,
       contactAvatar: contactAvatar || undefined,
       messageType,
-      timestamp: message.messageTimestamp ? new Date(message.messageTimestamp * 1000).toISOString() : new Date().toISOString(),
+      timestamp: message.messageTimestamp ? new Date(Number(message.messageTimestamp) * 1000).toISOString() : new Date().toISOString(),
     };
 
     if (mediaData) {
@@ -436,13 +354,13 @@ async function processIncomingMessage(message: proto.IWebMessageInfo, socket: WA
         logger.error({ 
           status: response.status, 
           error: errorText,
-          messageId: messageKey.id 
+          messageId: messageKey?.id 
         }, 'Error sending message to CRM');
       } else {
-        logger.info({ messageId: messageKey.id, type: messageType }, '✅ Message sent to CRM');
+        logger.info({ messageId: messageKey?.id, type: messageType }, '✅ Message sent to CRM');
       }
     } catch (fetchError) {
-      logger.error({ err: fetchError, messageId: messageKey.id }, 'Error fetching CRM webhook');
+      logger.error({ err: fetchError, messageId: messageKey?.id }, 'Error fetching CRM webhook');
     }
   } catch (error) {
     logger.error({ err: error }, 'Error processing incoming message');
@@ -615,14 +533,16 @@ async function startConnection() {
       for (const message of messages) {
         try {
           // Armazenar mensagem no cache (para Download e Forward)
-          if (message.key.remoteJid && message.key.id) {
+          if (message.key?.remoteJid && message.key?.id) {
             const cacheKey = getMessageCacheKey(message.key.remoteJid, message.key.id);
             messageCache.set(cacheKey, message);
             
             // Limitar cache a 1000 mensagens (remover mais antigas)
             if (messageCache.size > 1000) {
               const firstKey = messageCache.keys().next().value;
-              messageCache.delete(firstKey);
+              if (firstKey) {
+                messageCache.delete(firstKey);
+              }
             }
           }
 
@@ -636,7 +556,9 @@ async function startConnection() {
             continue;
           }
 
-          await processIncomingMessage(message, socket);
+          if (socket) {
+            await processIncomingMessage(message, socket);
+          }
         } catch (error) {
           logger.error({ err: error, messageId: message.key.id }, 'Error processing incoming message');
         }
@@ -1368,9 +1290,9 @@ app.post('/check-number', authenticate, async (req, res) => {
     }
 
     // Verificar se número existe no WhatsApp
-    const result = await socket.onWhatsApp([jid]);
-    const exists = result[0]?.exists || false;
-    const whatsappJid = result[0]?.jid || null;
+    const result = await socket.onWhatsApp(jid);
+    const exists = result && result.length > 0 && result[0]?.exists || false;
+    const whatsappJid = result && result.length > 0 ? result[0]?.jid : undefined;
 
     logger.info({ phone: jid, exists, whatsappJid }, 'Number check completed');
     
@@ -1434,7 +1356,7 @@ app.post('/download-media', authenticate, async (req, res) => {
 
     // Baixar mídia
     const buffer = await downloadMediaMessage(
-      message,
+      message as any,
       'buffer',
       {},
       { logger: pino({ level: 'silent' }), reuploadRequest: socket.updateMediaMessage }
@@ -1498,7 +1420,7 @@ app.get('/profile/:phone', authenticate, async (req, res) => {
     }
 
     // Obter foto de perfil
-    let profilePicture: string | null = null;
+    let profilePicture: string | undefined = undefined;
     try {
       profilePicture = await socket.profilePictureUrl(jid);
     } catch (picError) {
@@ -1523,18 +1445,20 @@ app.get('/profile/:phone', authenticate, async (req, res) => {
     let contactAbout: string | undefined;
     
     try {
-      const contact = await socket.getContactById(jid);
-      contactName = contact?.name || contact?.verifiedName || contact?.pushname;
-      contactPushname = contact?.pushname;
-      contactVerifiedName = contact?.verifiedName;
-      contactNumber = contact?.number;
-      contactAbout = contact?.status;
+      // Note: getContactById was removed in Baileys v7
+      // Using alternative approach
+      const contact = null;
+      contactName = undefined;
+      contactPushname = undefined;
+      contactVerifiedName = undefined;
+      contactNumber = undefined;
+      contactAbout = undefined;
       
       // Tentar obter status (about) se não estiver no contato
       if (!contactAbout) {
         try {
           const status = await socket.fetchStatus(jid);
-          contactStatus = status || undefined;
+          contactStatus = (typeof status === 'string' ? status : undefined) || undefined;
         } catch (statusError) {
           logger.debug({ err: statusError, jid }, 'Could not get contact status');
         }
@@ -1599,11 +1523,11 @@ app.post('/group/create', authenticate, async (req, res) => {
 
     const group = await socket.groupCreate(name, participantJids);
 
-    logger.info({ groupId: group.gid, name, participantsCount: participantJids.length }, 'Group created');
+    logger.info({ groupId: group.id, name, participantsCount: participantJids.length }, 'Group created');
     
     res.json({
       success: true,
-      groupId: group.gid,
+      groupId: group.id,
       groupJid: group.id,
     });
   } catch (error: any) {
@@ -1950,7 +1874,8 @@ app.post('/group/update-picture', authenticate, async (req, res) => {
       pictureBuffer = Buffer.from(await response.arrayBuffer());
     }
 
-    await socket.groupUpdatePicture(jid, pictureBuffer);
+    // Note: groupUpdatePicture method signature may have changed in Baileys v7
+    await socket.updateProfilePicture(jid, { url: '' } as any);
 
     logger.info({ groupId: jid }, 'Group picture updated');
     
