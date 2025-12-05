@@ -1098,55 +1098,6 @@ app.post('/disconnect', authenticate, async (req, res) => {
   });
 });
 
-// POST /mark-as-read
-app.post('/mark-as-read', authenticate, async (req, res) => {
-  if (connectionStatus !== 'connected' || !socket) {
-    return res.status(400).json({
-      success: false,
-      error: 'WhatsApp is not connected',
-    });
-  }
-
-  const { messageId, chatId } = req.body;
-
-  if (!messageId || !chatId) {
-    return res.status(400).json({
-      success: false,
-      error: 'messageId and chatId are required',
-    });
-  }
-
-  try {
-    // Converter formato do CRM (@c.us) para formato do Baileys (@s.whatsapp.net)
-    let jid = chatId;
-    if (chatId.includes('@c.us')) {
-      jid = chatId.replace('@c.us', '@s.whatsapp.net');
-    } else if (!chatId.includes('@')) {
-      jid = `${chatId}@s.whatsapp.net`;
-    }
-
-    // Marcar mensagem como lida
-    await socket.readMessages([{
-      remoteJid: jid,
-      id: messageId,
-      fromMe: false,
-    }]);
-
-    logger.info({ messageId, chatId: jid }, 'Message marked as read');
-    
-    res.json({
-      success: true,
-      message: 'Message marked as read',
-    });
-  } catch (error: any) {
-    logger.error({ err: error, messageId, chatId }, 'Error marking message as read');
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to mark message as read',
-    });
-  }
-});
-
 // POST /presence
 app.post('/presence', authenticate, async (req, res) => {
   if (connectionStatus !== 'connected' || !socket) {
