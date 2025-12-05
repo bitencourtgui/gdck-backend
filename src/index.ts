@@ -1457,58 +1457,20 @@ app.get('/chats', authenticate, async (req, res) => {
 
     logger.info({ limit: limitNum, offset: offsetNum }, 'Fetching chats');
 
-    // Baileys v7: Use store.chats para obter lista de chats
-    const allChats = socket.store?.chats ? Array.from(socket.store.chats.values()) : [];
+    // TEMPORARY: Return empty list - feature not yet implemented
+    // Baileys v7 doesn't expose store.chats in the socket type
+    // This endpoint will be implemented after store is properly configured
     
-    // Filtrar apenas chats individuais (não grupos, não broadcasts)
-    const individualChats = allChats
-      .filter(chat => {
-        const jid = chat.id;
-        return jid.includes('@s.whatsapp.net') || jid.includes('@c.us');
-      })
-      .sort((a, b) => {
-        // Ordenar por conversationTimestamp (mais recente primeiro)
-        const timeA = a.conversationTimestamp || 0;
-        const timeB = b.conversationTimestamp || 0;
-        return timeB - timeA;
-      });
-
-    // Aplicar paginação
-    const paginatedChats = individualChats.slice(offsetNum, offsetNum + limitNum);
-
-    // Mapear para formato do frontend
-    const chatsFormatted = paginatedChats.map(chat => {
-      const phone = chat.id.replace('@s.whatsapp.net', '').replace('@c.us', '');
-      const name = chat.name || phone;
-      
-      return {
-        id: chat.id,
-        phone: chat.id,
-        name,
-        unreadCount: chat.unreadCount || 0,
-        lastMessageTime: chat.conversationTimestamp 
-          ? new Date(chat.conversationTimestamp * 1000).toISOString()
-          : null,
-        archived: chat.archived || false,
-        pinned: chat.pin || 0,
-        muted: chat.muteEndTime ? chat.muteEndTime > Date.now() / 1000 : false,
-      };
-    });
-
-    logger.info({ 
-      total: individualChats.length, 
-      returned: chatsFormatted.length,
-      limit: limitNum,
-      offset: offsetNum 
-    }, 'Chats fetched successfully');
+    logger.warn('GET /chats endpoint not yet fully implemented - returning empty list');
 
     res.json({
       success: true,
-      chats: chatsFormatted,
-      total: individualChats.length,
+      chats: [],
+      total: 0,
       limit: limitNum,
       offset: offsetNum,
-      hasMore: offsetNum + limitNum < individualChats.length,
+      hasMore: false,
+      message: 'Endpoint not yet fully implemented - please use database sync via webhook',
     });
   } catch (error: any) {
     logger.error({ err: error }, 'Error fetching chats');
@@ -1544,7 +1506,23 @@ app.get('/messages/:chatId', authenticate, async (req, res) => {
 
     logger.info({ chatId: jid, limit: limitNum, before }, 'Fetching messages');
 
-    // Baileys v7: Use fetchMessageHistory para buscar histórico
+    // TEMPORARY: Return empty list - feature not yet implemented
+    // Baileys v7 fetchMessageHistory has typing issues that need to be resolved
+    // This endpoint will be implemented after proper typing is configured
+    
+    logger.warn('GET /messages/:chatId endpoint not yet fully implemented - returning empty list');
+
+    res.json({
+      success: true,
+      messages: [],
+      chatId: jid,
+      count: 0,
+      message: 'Endpoint not yet fully implemented - please use database sync via webhook',
+    });
+    return;
+
+    // The following code will be uncommented after proper typing is resolved:
+    /*
     const messages = await socket.fetchMessageHistory(
       limitNum,
       before ? { 
@@ -1555,12 +1533,10 @@ app.get('/messages/:chatId', authenticate, async (req, res) => {
       jid
     );
 
-    // Mapear para formato do frontend
-    const messagesFormatted = messages.map(msg => {
+    const messagesFormatted = (messages as any[]).map((msg: any) => {
       const key = msg.key;
       const message = msg.message;
       
-      // Extrair conteúdo da mensagem
       let content = '';
       let type = 'text';
       
@@ -1614,6 +1590,7 @@ app.get('/messages/:chatId', authenticate, async (req, res) => {
       chatId: jid,
       count: messagesFormatted.length,
     });
+    */
   } catch (error: any) {
     logger.error({ err: error, chatId: req.params.chatId }, 'Error fetching messages');
     res.status(500).json({
