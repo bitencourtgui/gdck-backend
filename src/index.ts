@@ -16,7 +16,7 @@ const __dirname = dirname(__filename);
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8000;
 const API_KEY = process.env.API_KEY || '';
 const AUTH_DIR = process.env.AUTH_DIR || join(__dirname, 'auth_info');
 const LOG_LEVEL = (process.env.LOG_LEVEL || 'info') as pino.Level;

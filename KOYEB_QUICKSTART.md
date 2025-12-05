@@ -29,11 +29,11 @@ No dashboard:
 
 **Builder:** Dockerfile
 
-**Port:** `8080`
+**Port:** `8000`
 
 **Environment Variables:**
 ```
-PORT=8080
+PORT=8000
 NODE_ENV=production
 API_KEY=gdck-secret-2024-super-forte
 CRM_WEBHOOK_URL=https://gdck-frontend-crm.vercel.app/api/whatsapp/save-message
