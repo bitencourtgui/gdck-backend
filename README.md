@@ -29,7 +29,7 @@ cp .env.example .env
 
 2. Configure as variáveis:
 ```env
-PORT=8080
+PORT=8000
 API_KEY=your-secret-key-here  # Opcional, mas recomendado
 AUTH_DIR=./auth_info
 LOG_LEVEL=info

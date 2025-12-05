@@ -51,7 +51,7 @@ Na tela de configuração:
 
 **Build command:** (deixe vazio, o Dockerfile já tem tudo)
 
-**Port:** `8080`
+**Port:** `8000`
 
 ---
 
@@ -61,7 +61,7 @@ Adicione as seguintes variáveis de ambiente:
 
 | Nome | Valor | Obrigatório |
 |------|-------|-------------|
-| `PORT` | `8080` | ✅ Sim |
+| `PORT` | `8000` | ✅ Sim |
 | `NODE_ENV` | `production` | ✅ Sim |
 | `API_KEY` | `sua-chave-secreta-forte` | ⚠️ Recomendado |
 | `CRM_WEBHOOK_URL` | `https://gdck-frontend-crm.vercel.app/api/whatsapp/save-message` | ✅ Sim |
@@ -205,7 +205,8 @@ No dashboard:
 - Verifique se todas as dependências estão no package.json
 
 ### Health Check Failed
-- Verifique se a porta `8080` está configurada
+- Verifique se a porta `8000` está configurada
+- **IMPORTANTE:** Configure o path do health check como `/health` (não `/`)
 - Confirme que o endpoint `/health` existe
 - Veja os logs da aplicação
 
