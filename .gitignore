@@ -1,7 +1,21 @@
 node_modules/
 dist/
 .env
+.env.local
+.env.*.local
 auth_info/
 *.log
 .DS_Store
 
+# Fly.io
+.fly/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# TypeScript
+*.tsbuildinfo

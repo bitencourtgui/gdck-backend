@@ -1,0 +1,40 @@
+# fly.toml - Fly.io Configuration
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "gdck-baileys-server"
+primary_region = "gru" # São Paulo, Brazil
+
+[build]
+
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+  AUTH_DIR = "/data/auth_info"
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+# Volume persistente para salvar sessões WhatsApp
+[[mounts]]
+  source = "whatsapp_auth_data"
+  destination = "/data"
+  initial_size = "1gb"
+

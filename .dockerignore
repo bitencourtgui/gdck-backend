@@ -1,0 +1,51 @@
+# Node modules
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Auth info (será criado no volume)
+auth_info/
+src/auth_info/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build files (será criado no build)
+dist/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Fly.io
+fly.toml
+.fly/
+
