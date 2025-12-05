@@ -1898,9 +1898,9 @@ app.get('/health', (req, res) => {
 });
 
 // Iniciar servidor
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
   logger.info(`🚀 Baileys Server running on port ${PORT}`);
-  logger.info(`📡 API available at http://localhost:${PORT}`);
+  logger.info(`📡 API available at http://0.0.0.0:${PORT}`);
   logger.info(`🔗 CRM Webhook URL: ${CRM_WEBHOOK_URL}`);
   
   if (API_KEY) {
