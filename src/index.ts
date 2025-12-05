@@ -1441,6 +1441,188 @@ app.get('/profile/:phone', authenticate, async (req, res) => {
   }
 });
 
+// GET /chats
+app.get('/chats', authenticate, async (req, res) => {
+  if (connectionStatus !== 'connected' || !socket) {
+    return res.status(400).json({
+      success: false,
+      error: 'WhatsApp is not connected',
+    });
+  }
+
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+    const limitNum = Math.min(parseInt(limit as string, 10) || 50, 100); // Max 100
+    const offsetNum = parseInt(offset as string, 10) || 0;
+
+    logger.info({ limit: limitNum, offset: offsetNum }, 'Fetching chats');
+
+    // Baileys v7: Use store.chats para obter lista de chats
+    const allChats = socket.store?.chats ? Array.from(socket.store.chats.values()) : [];
+    
+    // Filtrar apenas chats individuais (não grupos, não broadcasts)
+    const individualChats = allChats
+      .filter(chat => {
+        const jid = chat.id;
+        return jid.includes('@s.whatsapp.net') || jid.includes('@c.us');
+      })
+      .sort((a, b) => {
+        // Ordenar por conversationTimestamp (mais recente primeiro)
+        const timeA = a.conversationTimestamp || 0;
+        const timeB = b.conversationTimestamp || 0;
+        return timeB - timeA;
+      });
+
+    // Aplicar paginação
+    const paginatedChats = individualChats.slice(offsetNum, offsetNum + limitNum);
+
+    // Mapear para formato do frontend
+    const chatsFormatted = paginatedChats.map(chat => {
+      const phone = chat.id.replace('@s.whatsapp.net', '').replace('@c.us', '');
+      const name = chat.name || phone;
+      
+      return {
+        id: chat.id,
+        phone: chat.id,
+        name,
+        unreadCount: chat.unreadCount || 0,
+        lastMessageTime: chat.conversationTimestamp 
+          ? new Date(chat.conversationTimestamp * 1000).toISOString()
+          : null,
+        archived: chat.archived || false,
+        pinned: chat.pin || 0,
+        muted: chat.muteEndTime ? chat.muteEndTime > Date.now() / 1000 : false,
+      };
+    });
+
+    logger.info({ 
+      total: individualChats.length, 
+      returned: chatsFormatted.length,
+      limit: limitNum,
+      offset: offsetNum 
+    }, 'Chats fetched successfully');
+
+    res.json({
+      success: true,
+      chats: chatsFormatted,
+      total: individualChats.length,
+      limit: limitNum,
+      offset: offsetNum,
+      hasMore: offsetNum + limitNum < individualChats.length,
+    });
+  } catch (error: any) {
+    logger.error({ err: error }, 'Error fetching chats');
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch chats',
+    });
+  }
+});
+
+// GET /messages/:chatId
+app.get('/messages/:chatId', authenticate, async (req, res) => {
+  if (connectionStatus !== 'connected' || !socket) {
+    return res.status(400).json({
+      success: false,
+      error: 'WhatsApp is not connected',
+    });
+  }
+
+  try {
+    const { chatId: rawChatId } = req.params;
+    const { limit = 50, before } = req.query;
+    
+    const limitNum = Math.min(parseInt(limit as string, 10) || 50, 100); // Max 100
+    
+    // Converter chatId de formato CRM (@c.us) para Baileys (@s.whatsapp.net)
+    let jid = rawChatId;
+    if (rawChatId.includes('@c.us')) {
+      jid = rawChatId.replace('@c.us', '@s.whatsapp.net');
+    } else if (!rawChatId.includes('@')) {
+      jid = `${rawChatId}@s.whatsapp.net`;
+    }
+
+    logger.info({ chatId: jid, limit: limitNum, before }, 'Fetching messages');
+
+    // Baileys v7: Use fetchMessageHistory para buscar histórico
+    const messages = await socket.fetchMessageHistory(
+      limitNum,
+      before ? { 
+        id: before as string, 
+        remoteJid: jid,
+        fromMe: false,
+      } : undefined,
+      jid
+    );
+
+    // Mapear para formato do frontend
+    const messagesFormatted = messages.map(msg => {
+      const key = msg.key;
+      const message = msg.message;
+      
+      // Extrair conteúdo da mensagem
+      let content = '';
+      let type = 'text';
+      
+      if (message?.conversation) {
+        content = message.conversation;
+        type = 'text';
+      } else if (message?.extendedTextMessage?.text) {
+        content = message.extendedTextMessage.text;
+        type = 'text';
+      } else if (message?.imageMessage?.caption) {
+        content = message.imageMessage.caption || '[Imagem]';
+        type = 'image';
+      } else if (message?.videoMessage?.caption) {
+        content = message.videoMessage.caption || '[Vídeo]';
+        type = 'video';
+      } else if (message?.audioMessage) {
+        content = '[Áudio]';
+        type = 'audio';
+      } else if (message?.documentMessage?.fileName) {
+        content = `[Documento: ${message.documentMessage.fileName}]`;
+        type = 'document';
+      } else if (message?.stickerMessage) {
+        content = '[Sticker]';
+        type = 'sticker';
+      } else {
+        content = '[Mensagem não suportada]';
+        type = 'unknown';
+      }
+
+      return {
+        id: key.id,
+        chatId: jid,
+        fromMe: key.fromMe || false,
+        content,
+        type,
+        timestamp: msg.messageTimestamp 
+          ? new Date((msg.messageTimestamp as number) * 1000).toISOString()
+          : new Date().toISOString(),
+        status: msg.status || 'unknown',
+      };
+    });
+
+    logger.info({ 
+      chatId: jid, 
+      returned: messagesFormatted.length 
+    }, 'Messages fetched successfully');
+
+    res.json({
+      success: true,
+      messages: messagesFormatted,
+      chatId: jid,
+      count: messagesFormatted.length,
+    });
+  } catch (error: any) {
+    logger.error({ err: error, chatId: req.params.chatId }, 'Error fetching messages');
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch messages',
+    });
+  }
+});
+
 // ============================================
 // GRUPOS - Endpoints de Gerenciamento
 // ============================================
